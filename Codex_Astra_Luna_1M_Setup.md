@@ -6,7 +6,7 @@ The design goals are:
 
 - Keep orchestration and hard technical decisions in Astra.
 - Use Luna for exploration, implementation, debugging, testing, and review.
-- Because Luna is low-cost, use parallel Luna workers proactively when independent work units can improve turnaround or coverage.
+- Dispatch independent Luna work in explicit same-wave batches, starting small and expanding only when independence and resources support it.
 - Select Luna reasoning effort by task complexity instead of running every task at `max`.
 - Reuse relevant Luna context across investigation, implementation, and verification.
 - Avoid unnecessary Sol/Terra handoffs and duplicated high-cost context.
@@ -30,6 +30,18 @@ Astra main/native (global default request)
 There is no mandatory `low → medium → high → max` pipeline. Pick the role that matches the task.
 
 For difficult questions, Luna reports the unresolved issue back to the existing Astra session. Astra decides directly, then the same Luna worker can continue implementation and verification.
+
+## Parallel dispatch contract
+
+Treat the following as the Astra/Luna prompt-level execution contract:
+
+- If Astra identifies two or more independent subtasks, Astra decomposes the work first and submits every independent Luna worker in the same dispatch wave. Do not use `spawn → wait → spawn` for independent subtasks.
+- After all workers in a wave have been submitted, await and join their results as a batch. Send only work whose inputs depend on an earlier result in a later wave.
+- Start with roughly 2–4 useful Luna workers. Expand only after independence and resource availability are confirmed, up to the existing `max_concurrent_threads_per_session = 12` ceiling. Do not fill all 12 by default.
+- Give each write-enabled worker separate file/module ownership; concurrent edits to the same file are prohibited. Independent read-only searches and reviews should be parallelized when their scopes do not overlap.
+- Reuse retained worker context across related investigation, implementation, testing, and revision stages, but do not use that reuse as a reason to serialize independent branches. Luna workers are leaves: use Luna only, with no Sol/Terra or Astra child.
+
+This is prompt guidance rather than an automatic scheduler. Actual parallelism depends on the runtime submitting spawn calls concurrently. `max_concurrent_threads_per_session` is a concurrency ceiling; configuration alone does not create workers or make dispatch parallel.
 
 ---
 
@@ -55,7 +67,7 @@ max_depth = 1
 
 Notes:
 
-- `max_depth` applies to older V1 multi-agent behavior. V2 may ignore it.
+- `max_depth = 1` is a legacy/V1 nesting constraint: it limits nested delegation but does not block sibling Luna workers from running in parallel. V2 may ignore it.
 - The global context and compaction request applies to Astra and all five canonical Luna roles.
 - The current local model catalog may clamp the request to `max_context_window = 872_000` with an effective runtime compaction limit of `828_400`.
 
@@ -193,7 +205,7 @@ All delegated AI work uses Luna. Do not use Sol, Terra, or another Astra child.
 
 For important repository work, delegate one coherent unit to an existing suitable Luna worker before broad exploration, implementation, debugging, or testing. Reuse a useful worker before creating a new one. Delegate even when only one task can be parallelized; delegate independent units in parallel. While Luna works, Astra does not repeat the same scope.
 
-Because Luna is low-cost, actively use a small number of parallel Luna workers when independent units can improve turnaround or coverage. Do not create duplicate or ceremonial workers, and do not let workers edit the same file concurrently.
+For two or more independent subtasks, Astra decomposes first and submits all independent Luna workers in one dispatch wave; do not use `spawn → wait → spawn` for independent work. After submission, batch-wait and join the results, and put only dependency-bound work in a later wave. Start with roughly 2–4 useful workers and expand toward the existing 12-thread ceiling only when independence and resources are confirmed; do not fill the ceiling by default. Do not create duplicate or ceremonial workers, and do not let workers edit the same file concurrently.
 
 Choose the Luna role directly by task difficulty and permission needs:
 - `luna_low`: low — exact searches and facts.
@@ -228,7 +240,7 @@ Use independent review when it materially improves correctness; do not create ce
 Do not claim unrun tests passed.
 
 GitHub routing:
-- Route important GitHub work to Luna/max by default: use `luna_max` for repository search, diff analysis, code or documentation changes, tests, GitHub CLI preparation, and issue/PR drafting; use `luna_review` for independent review.
+- Route important GitHub work to Luna/max by default: use `luna_max` for repository search, diff analysis, code or documentation changes, tests, GitHub CLI preparation, and issue/PR drafting; use `luna_review` for independent review. Dispatch independent GitHub units in the same wave under the parallel dispatch contract.
 - Keep Astra to the minimum needed for task framing, final scope and safety approval, and execution of public repository creation, pushes, merges, and permission changes.
 - Never publish secrets, local configuration, credentials, or an unreviewed backlog.
 <!-- END ASTRA_LUNA_1M -->

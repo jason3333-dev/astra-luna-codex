@@ -88,11 +88,22 @@ These are **task classes, not sequential stages**.
 - Do not fill the global default context window simply because it exists.
 - If Luna reaches a genuinely hard unresolved decision, send the evidence back to Astra instead of adding another manager model.
 
+## Parallel dispatch contract
+
+Use this as prompt-level guidance for Astra's dispatch decisions:
+
+- When Astra identifies two or more independent subtasks, decompose them first and submit all independent Luna workers in the same dispatch wave.
+- Do not use `spawn → wait → spawn` for independent work. After all workers in a wave are submitted, await and join their results as a batch; send only work with a true predecessor dependency in a later wave.
+- Start with roughly 2–4 useful Luna workers. Expand toward the existing `max_concurrent_threads_per_session = 12` ceiling only when independence and resource availability are confirmed; do not fill all 12 by default.
+- Give each write-enabled worker disjoint file/module ownership, and never allow concurrent edits to the same file. Independent read-only searches and reviews may also run in parallel.
+- Reuse retained worker context across related stages, but do not use context reuse as a reason to serialize independent branches. Luna workers are leaves: use Luna only, with no Sol/Terra or Astra child.
+
+This contract is a prompt recommendation, not an automatic scheduler. Its effect depends on the runtime submitting spawn calls concurrently; a parallelism setting alone does not create workers or dispatch work automatically.
+
 ## GitHub routing
 
-- Important GitHub work is explicitly delegated to an existing suitable Luna worker before broad exploration, implementation, debugging, or testing; reuse that worker when possible.
-- Luna/max is the default: `luna_max` handles repository search, diff analysis, code or documentation changes, tests, GitHub CLI preparation, and issue/PR drafts; `luna_review` handles independent review.
-- Because Luna is low-cost, use a small number of parallel Luna workers proactively when independent work units improve turnaround or coverage; keep their scopes separate.
+- Important GitHub work is explicitly delegated to an existing suitable Luna worker before broad exploration, implementation, debugging, or testing; when multiple units are independent, submit them in the same dispatch wave and reuse useful workers when possible.
+- Luna/max is the default: `luna_max` handles repository search, diff analysis, code or documentation changes, tests, GitHub CLI preparation, and issue/PR drafts; `luna_review` handles independent review. Follow the parallel dispatch contract and keep scopes separate.
 - Astra is limited to task framing, final scope and safety approval, and public repository creation, push, merge, or permission execution.
 - While Luna works, Astra does not repeat the same scope; independent work units may be delegated to Luna in parallel.
 - Never publish secrets, local configuration, credentials, or an unreviewed backlog.
